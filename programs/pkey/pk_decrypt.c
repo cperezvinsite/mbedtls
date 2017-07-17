@@ -56,36 +56,37 @@ int main( void )
     return( 0 );
 }
 #else
-int main( int argc, char *argv[] )
+int main()
 {
-    FILE *f;
-    int ret, c;
-    size_t i, olen = 0;
+    //FILE *f;
+    int ret;//, c;
+    size_t i =0, olen = 0, olenFinal = 0;
     mbedtls_pk_context pk;
     mbedtls_entropy_context entropy;
     mbedtls_ctr_drbg_context ctr_drbg;
-    unsigned char result[1024];
-    unsigned char buf[512];
+    unsigned char result[2049];
+    unsigned char * buf = malloc(800);
     const char *pers = "mbedtls_pk_decrypt";
-    ((void) argv);
+    char * pkeyBuf = malloc(2049);
+    // ((void) argv);
 
     mbedtls_ctr_drbg_init( &ctr_drbg );
     memset(result, 0, sizeof( result ) );
     ret = 1;
 
-    if( argc != 2 )
-    {
-        mbedtls_printf( "usage: mbedtls_pk_decrypt <key_file>\n" );
+//     if( argc != 2 )
+//     {
+//         mbedtls_printf( "usage: mbedtls_pk_decrypt <key_file>\n" );
 
-#if defined(_WIN32)
-        mbedtls_printf( "\n" );
-#endif
+// #if defined(_WIN32)
+//         mbedtls_printf( "\n" );
+// #endif
 
-        goto exit;
-    }
+//         goto exit;
+//     }
 
-    mbedtls_printf( "\n  . Seeding the random number generator..." );
-    fflush( stdout );
+    // mbedtls_printf( "\n  . Seeding the random number generator..." );
+    // fflush( stdout );
 
     mbedtls_entropy_init( &entropy );
     if( ( ret = mbedtls_ctr_drbg_seed( &ctr_drbg, mbedtls_entropy_func, &entropy,
@@ -96,12 +97,25 @@ int main( int argc, char *argv[] )
         goto exit;
     }
 
-    mbedtls_printf( "\n  . Reading private key from '%s'", argv[1] );
-    fflush( stdout );
+    // mbedtls_printf( "\n  . Reading private key from '%s'", argv[1] );
+    // fflush( stdout );
+    char tmp;
+    int iSize = 0;
+    bzero(pkeyBuf,2049);
+    printf("\nWrite the private key\n");
+    while(1) {
+        tmp =(char)getchar();
+        if((tmp=='\n' && (iSize > 0 && pkeyBuf[iSize-1] == '\n')) || iSize>=2049){
+            break;
+        } 
+        pkeyBuf[iSize]=tmp;
+        iSize++;
+    }
+    olen = strlen(pkeyBuf)+1;
 
     mbedtls_pk_init( &pk );
 
-    if( ( ret = mbedtls_pk_parse_keyfile( &pk, argv[1], "" ) ) != 0 )
+    if( ( ret = mbedtls_pk_parse_key( &pk, (const unsigned char *)pkeyBuf, olen, (const unsigned char *)"", 0 ) ) != 0 )
     {
         mbedtls_printf( " failed\n  ! mbedtls_pk_parse_keyfile returned -0x%04x\n", -ret );
         goto exit;
@@ -111,26 +125,49 @@ int main( int argc, char *argv[] )
      * Extract the RSA encrypted value from the text file
      */
     ret = 1;
-
-    if( ( f = fopen( "result-enc.txt", "rb" ) ) == NULL )
-    {
-        mbedtls_printf( "\n  ! Could not open %s\n\n", "result-enc.txt" );
-        goto exit;
-    }
-
     i = 0;
 
-    while( fscanf( f, "%02X", &c ) > 0 &&
-           i < (int) sizeof( buf ) )
-        buf[i++] = (unsigned char) c;
+    // if( ( f = fopen( "result-enc.txt", "rb" ) ) == NULL )
+    // {
+    //     mbedtls_printf( "\n  ! Could not open %s\n\n", "result-enc.txt" );
+    //     goto exit;
+    // }
+    // while( fscanf( f, "%02X", &c ) > 0 && i < (int) sizeof( buf ) ){
+    //     printf("%d",c);
+    //     buf[i++] = (unsigned char) c;
+    // }
 
-    fclose( f );
+    // fclose( f );
+
+    char lastTmp;
+    char * tmpArr = malloc(5);
+    printf("write the txt\n");
+    int counter = 0;
+    tmpArr[0] = '0';
+    tmpArr[1] = 'x';
+    while(1) {
+        tmp =(char)getchar();
+        if((tmp=='\n' && lastTmp == '\n') || i>=800){
+            break;
+        }
+        if(tmp != ' ' && tmp != '\n'){
+            counter++;
+            if(counter == 2){
+                tmpArr[2] = lastTmp;
+                tmpArr[3] = tmp;
+                tmpArr[4] = '\0';
+                buf[i++] = strtol(tmpArr,NULL,0);
+                counter = 0;
+            }
+        }
+        lastTmp = tmp;
+    }
 
     /*
      * Decrypt the encrypted RSA data and print the result.
      */
-    mbedtls_printf( "\n  . Decrypting the encrypted data" );
-    fflush( stdout );
+    //mbedtls_printf( "\n  . Decrypting the encrypted data %s",buf );
+    // fflush( stdout );
 
     if( ( ret = mbedtls_pk_decrypt( &pk, buf, i, result, &olen, sizeof(result),
                             mbedtls_ctr_drbg_random, &ctr_drbg ) ) != 0 )
@@ -139,9 +176,9 @@ int main( int argc, char *argv[] )
         goto exit;
     }
 
-    mbedtls_printf( "\n  . OK\n\n" );
+    //mbedtls_printf( "\n  . OK\n\n" );
 
-    mbedtls_printf( "The decrypted result is: '%s'\n\n", result );
+    mbedtls_printf( "%s", result );
 
     ret = 0;
 
