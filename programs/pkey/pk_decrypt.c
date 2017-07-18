@@ -60,7 +60,7 @@ int main()
 {
     //FILE *f;
     int ret;//, c;
-    size_t i =0, olen = 0, olenFinal = 0;
+    size_t i =0, olen = 0;
     mbedtls_pk_context pk;
     mbedtls_entropy_context entropy;
     mbedtls_ctr_drbg_context ctr_drbg;

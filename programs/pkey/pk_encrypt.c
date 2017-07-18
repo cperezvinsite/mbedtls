@@ -56,7 +56,7 @@ int main( void )
     return( 0 );
 }
 #else
-int main()
+int main( int argc, char *argv[] )
 {
     int ret;
     size_t i, olen = 0;
@@ -66,7 +66,11 @@ int main()
     unsigned char input[1024];
     unsigned char buf[512];
     const char *pers = "mbedtls_pk_encrypt";
-
+    if( argc != 2 )
+    {
+        mbedtls_printf( "usage: mbedtls_pk_sign <enc text>\n" );
+        return -1;
+    }
     ret = 1;
     mbedtls_ctr_drbg_init( &ctr_drbg );
     fflush( stdout );
@@ -84,10 +88,10 @@ int main()
 
     mbedtls_pk_init( &pk );
     char * pkeyBuf = malloc(550);
-    char * to_crypt = malloc(100);
+    //char * to_crypt = malloc(100);
     char tmp;
     int iSize = 0;
-    printf("\nadd the public key pubkey.pem\n");
+    //printf("\npubkey");
     //READ PUBLIC KEY FROM INPUT
     bzero(pkeyBuf,550);
     while(1) {
@@ -106,24 +110,28 @@ int main()
         return -1;
     }
     
-    printf("\nadd the text\n");
-    iSize = 0;
-    while(1) {
-        tmp =(char)getchar();
-        if(tmp=='\n'|| iSize>=100){
-            break;
-        } 
-        to_crypt[iSize]=tmp;
-        iSize++;
+    // printf("\ntext");
+    // iSize = 0;
+    // while(1) {
+    //     tmp =(char)getchar();
+    //     if(tmp=='\n'|| iSize>=100){
+    //         break;
+    //     } 
+    //     to_crypt[iSize]=tmp;
+    //     iSize++;
+    // }
+    if( strlen( argv[1] ) > 255 )
+    {
+        mbedtls_printf( " Input data larger than 100 characters.\n\n" );
+        return -1;
     }
-
-    memcpy( input, to_crypt, strlen( to_crypt ) );
-
+    memcpy( input, argv[1], strlen( argv[1] ) );
+    //printf("\nthe text is \n%s\n",input);
     /*
      * Calculate the RSA encryption of the hash.
      */
 
-    if( ( ret = mbedtls_pk_encrypt( &pk, input, strlen( to_crypt ),
+    if( ( ret = mbedtls_pk_encrypt( &pk, input, strlen( argv[1] ),
                             buf, &olen, sizeof(buf),
                             mbedtls_ctr_drbg_random, &ctr_drbg ) ) != 0 )
     {
@@ -135,6 +143,7 @@ int main()
      * Write the signature into result-enc.txt
      */
     //SE QUITO EL LOG DE PK.C LINEA 304 //printf("\nmbedtls_pk_encrypt input: %s\n ilen: %d\n output: %s\n osize: %d\n",input, ilen, output, osize);
+    printf("RESULTPKENCRYPT:");
     for( i = 0; i < olen; i++ )
         printf( "%02X%s", buf[i], ( i + 1 ) % 16 == 0 ? "\r\n" : " " );
 
