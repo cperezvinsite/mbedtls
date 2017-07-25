@@ -34,6 +34,8 @@
 #endif
 
 #include "mbedtls/aes.h"
+#include "mbedtls/base64.h"
+
 #include "mbedtls/md.h"
 
 #include <stdio.h>
@@ -71,382 +73,79 @@ int main( void )
 #else
 int main( int argc, char *argv[] )
 {
-    int ret = 1;
-
-    unsigned int i, n;
-    int mode, lastn;
-    size_t keylen;
-    FILE *fkey, *fin = NULL, *fout = NULL;
-
-    char *p;
-    unsigned char IV[16];
-    unsigned char key[512];
-    unsigned char digest[32];
-    unsigned char buffer[1024];
-    unsigned char diff;
-
-    mbedtls_aes_context aes_ctx;
-    mbedtls_md_context_t sha_ctx;
-
-#if defined(_WIN32_WCE)
-    long filesize, offset;
-#elif defined(_WIN32)
-       LARGE_INTEGER li_size;
-    __int64 filesize, offset;
-#else
-      off_t filesize, offset;
-#endif
-
-    mbedtls_aes_init( &aes_ctx );
-    mbedtls_md_init( &sha_ctx );
-
-    ret = mbedtls_md_setup( &sha_ctx, mbedtls_md_info_from_type( MBEDTLS_MD_SHA256 ), 1 );
-    if( ret != 0 )
+    if( argc != 3 )
     {
-        mbedtls_printf( "  ! mbedtls_md_setup() returned -0x%04x\n", -ret );
-        goto exit;
+        mbedtls_printf( "usage:  <key> <enc text>\n" );
+        return -1;
+    }
+    if( strlen( argv[1] ) > 64 )
+    {
+        mbedtls_printf( " Input data larger than 64 characters.\n\n" );
+        return -1;
+    }
+    if( strlen( argv[2] ) > 100 )
+    {
+        mbedtls_printf( " Input data larger than 100 characters.\n\n" );
+        return -1;
+    }
+    
+
+    char tmpArr[5];
+    char * key = malloc(64);
+    char * buffer = malloc(16);
+    char * input = malloc(100);
+    char * result = malloc(300);
+    char * finalKey = malloc(32);
+    unsigned char * result_b64 = malloc(300);
+    int i = 0;
+    int counter = 0;
+    size_t olen = 0;
+
+
+    bzero(input,100);
+    tmpArr[0] = '0';
+    tmpArr[1] = 'x';
+
+    memcpy( key, argv[1], strlen( argv[1] ) );
+    memcpy( input, argv[2], strlen( argv[2] ) );
+    
+    mbedtls_aes_context aes_cr;
+    mbedtls_aes_context aes_dec;
+    mbedtls_aes_init( &aes_cr );
+    mbedtls_aes_init( &aes_dec );
+
+    //crear nueva llave usando un hex en string y separando cada byte
+    for(i = 2; i<64; i += 2){
+        tmpArr[2] = key[i-2];
+        tmpArr[3] = key[i-1];
+        tmpArr[4] = '\0';
+        finalKey[counter++] = strtol(tmpArr,NULL,0);
     }
 
-    /*
-     * Parse the command-line arguments.
-     */
-    if( argc != 5 )
-    {
-        mbedtls_printf( USAGE );
-
-#if defined(_WIN32)
-        mbedtls_printf( "\n  Press Enter to exit this program.\n" );
-        fflush( stdout ); getchar();
-#endif
-
-        goto exit;
+    //crea llave aes con libreria, si falla retorna 
+    if(mbedtls_aes_setkey_enc( &aes_cr, (const unsigned char *)finalKey, 256 )){
+        printf("enc key error\n");
+        free(key);
+        free(result);
+        free(result_b64);
+        free(input);
+        free(finalKey);
+        free(buffer);
+        return -1;
     }
 
-    mode = atoi( argv[1] );
-    memset(IV, 0, sizeof(IV));
-    memset(key, 0, sizeof(key));
-    memset(digest, 0, sizeof(digest));
-    memset(buffer, 0, sizeof(buffer));
-
-    if( mode != MODE_ENCRYPT && mode != MODE_DECRYPT )
-    {
-        mbedtls_fprintf( stderr, "invalide operation mode\n" );
-        goto exit;
-    }
-
-    if( strcmp( argv[2], argv[3] ) == 0 )
-    {
-        mbedtls_fprintf( stderr, "input and output filenames must differ\n" );
-        goto exit;
-    }
-
-    if( ( fin = fopen( argv[2], "rb" ) ) == NULL )
-    {
-        mbedtls_fprintf( stderr, "fopen(%s,rb) failed\n", argv[2] );
-        goto exit;
-    }
-
-    if( ( fout = fopen( argv[3], "wb+" ) ) == NULL )
-    {
-        mbedtls_fprintf( stderr, "fopen(%s,wb+) failed\n", argv[3] );
-        goto exit;
-    }
-
-    /*
-     * Read the secret key and clean the command line.
-     */
-    if( ( fkey = fopen( argv[4], "rb" ) ) != NULL )
-    {
-        keylen = fread( key, 1, sizeof( key ), fkey );
-        fclose( fkey );
-    }
-    else
-    {
-        if( memcmp( argv[4], "hex:", 4 ) == 0 )
-        {
-            p = &argv[4][4];
-            keylen = 0;
-
-            while( sscanf( p, "%02X", &n ) > 0 &&
-                   keylen < (int) sizeof( key ) )
-            {
-                key[keylen++] = (unsigned char) n;
-                p += 2;
-            }
-        }
-        else
-        {
-            keylen = strlen( argv[4] );
-
-            if( keylen > (int) sizeof( key ) )
-                keylen = (int) sizeof( key );
-
-            memcpy( key, argv[4], keylen );
-        }
-    }
-
-    memset( argv[4], 0, strlen( argv[4] ) );
-
-#if defined(_WIN32_WCE)
-    filesize = fseek( fin, 0L, SEEK_END );
-#else
-#if defined(_WIN32)
-    /*
-     * Support large files (> 2Gb) on Win32
-     */
-    li_size.QuadPart = 0;
-    li_size.LowPart  =
-        SetFilePointer( (HANDLE) _get_osfhandle( _fileno( fin ) ),
-                        li_size.LowPart, &li_size.HighPart, FILE_END );
-
-    if( li_size.LowPart == 0xFFFFFFFF && GetLastError() != NO_ERROR )
-    {
-        mbedtls_fprintf( stderr, "SetFilePointer(0,FILE_END) failed\n" );
-        goto exit;
-    }
-
-    filesize = li_size.QuadPart;
-#else
-    if( ( filesize = lseek( fileno( fin ), 0, SEEK_END ) ) < 0 )
-    {
-        perror( "lseek" );
-        goto exit;
-    }
-#endif
-#endif
-
-    if( fseek( fin, 0, SEEK_SET ) < 0 )
-    {
-        mbedtls_fprintf( stderr, "fseek(0,SEEK_SET) failed\n" );
-        goto exit;
-    }
-
-    if( mode == MODE_ENCRYPT )
-    {
-        /*
-         * Generate the initialization vector as:
-         * IV = SHA-256( filesize || filename )[0..15]
-         */
-        for( i = 0; i < 8; i++ )
-            buffer[i] = (unsigned char)( filesize >> ( i << 3 ) );
-
-        p = argv[2];
-
-        mbedtls_md_starts( &sha_ctx );
-        mbedtls_md_update( &sha_ctx, buffer, 8 );
-        mbedtls_md_update( &sha_ctx, (unsigned char *) p, strlen( p ) );
-        mbedtls_md_finish( &sha_ctx, digest );
-
-        memcpy( IV, digest, 16 );
-
-        /*
-         * The last four bits in the IV are actually used
-         * to store the file size modulo the AES block size.
-         */
-        lastn = (int)( filesize & 0x0F );
-
-        IV[15] = (unsigned char)
-            ( ( IV[15] & 0xF0 ) | lastn );
-
-        /*
-         * Append the IV at the beginning of the output.
-         */
-        if( fwrite( IV, 1, 16, fout ) != 16 )
-        {
-            mbedtls_fprintf( stderr, "fwrite(%d bytes) failed\n", 16 );
-            goto exit;
-        }
-
-        /*
-         * Hash the IV and the secret key together 8192 times
-         * using the result to setup the AES context and HMAC.
-         */
-        memset( digest, 0,  32 );
-        memcpy( digest, IV, 16 );
-
-        for( i = 0; i < 8192; i++ )
-        {
-            mbedtls_md_starts( &sha_ctx );
-            mbedtls_md_update( &sha_ctx, digest, 32 );
-            mbedtls_md_update( &sha_ctx, key, keylen );
-            mbedtls_md_finish( &sha_ctx, digest );
-        }
-
-        memset( key, 0, sizeof( key ) );
-        mbedtls_aes_setkey_enc( &aes_ctx, digest, 256 );
-        mbedtls_md_hmac_starts( &sha_ctx, digest, 32 );
-
-        /*
-         * Encrypt and write the ciphertext.
-         */
-        for( offset = 0; offset < filesize; offset += 16 )
-        {
-            n = ( filesize - offset > 16 ) ? 16 : (int)
-                ( filesize - offset );
-
-            if( fread( buffer, 1, n, fin ) != (size_t) n )
-            {
-                mbedtls_fprintf( stderr, "fread(%d bytes) failed\n", n );
-                goto exit;
-            }
-
-            for( i = 0; i < 16; i++ )
-                buffer[i] = (unsigned char)( buffer[i] ^ IV[i] );
-
-            mbedtls_aes_crypt_ecb( &aes_ctx, MBEDTLS_AES_ENCRYPT, buffer, buffer );
-            mbedtls_md_hmac_update( &sha_ctx, buffer, 16 );
-
-            if( fwrite( buffer, 1, 16, fout ) != 16 )
-            {
-                mbedtls_fprintf( stderr, "fwrite(%d bytes) failed\n", 16 );
-                goto exit;
-            }
-
-            memcpy( IV, buffer, 16 );
-        }
-
-        /*
-         * Finally write the HMAC.
-         */
-        mbedtls_md_hmac_finish( &sha_ctx, digest );
-
-        if( fwrite( digest, 1, 32, fout ) != 32 )
-        {
-            mbedtls_fprintf( stderr, "fwrite(%d bytes) failed\n", 16 );
-            goto exit;
-        }
-    }
-
-    if( mode == MODE_DECRYPT )
-    {
-        unsigned char tmp[16];
-
-        /*
-         *  The encrypted file must be structured as follows:
-         *
-         *        00 .. 15              Initialization Vector
-         *        16 .. 31              AES Encrypted Block #1
-         *           ..
-         *      N*16 .. (N+1)*16 - 1    AES Encrypted Block #N
-         *  (N+1)*16 .. (N+1)*16 + 32   HMAC-SHA-256(ciphertext)
-         */
-        if( filesize < 48 )
-        {
-            mbedtls_fprintf( stderr, "File too short to be encrypted.\n" );
-            goto exit;
-        }
-
-        if( ( filesize & 0x0F ) != 0 )
-        {
-            mbedtls_fprintf( stderr, "File size not a multiple of 16.\n" );
-            goto exit;
-        }
-
-        /*
-         * Subtract the IV + HMAC length.
-         */
-        filesize -= ( 16 + 32 );
-
-        /*
-         * Read the IV and original filesize modulo 16.
-         */
-        if( fread( buffer, 1, 16, fin ) != 16 )
-        {
-            mbedtls_fprintf( stderr, "fread(%d bytes) failed\n", 16 );
-            goto exit;
-        }
-
-        memcpy( IV, buffer, 16 );
-        lastn = IV[15] & 0x0F;
-
-        /*
-         * Hash the IV and the secret key together 8192 times
-         * using the result to setup the AES context and HMAC.
-         */
-        memset( digest, 0,  32 );
-        memcpy( digest, IV, 16 );
-
-        for( i = 0; i < 8192; i++ )
-        {
-            mbedtls_md_starts( &sha_ctx );
-            mbedtls_md_update( &sha_ctx, digest, 32 );
-            mbedtls_md_update( &sha_ctx, key, keylen );
-            mbedtls_md_finish( &sha_ctx, digest );
-        }
-
-        memset( key, 0, sizeof( key ) );
-        mbedtls_aes_setkey_dec( &aes_ctx, digest, 256 );
-        mbedtls_md_hmac_starts( &sha_ctx, digest, 32 );
-
-        /*
-         * Decrypt and write the plaintext.
-         */
-        for( offset = 0; offset < filesize; offset += 16 )
-        {
-            if( fread( buffer, 1, 16, fin ) != 16 )
-            {
-                mbedtls_fprintf( stderr, "fread(%d bytes) failed\n", 16 );
-                goto exit;
-            }
-
-            memcpy( tmp, buffer, 16 );
-
-            mbedtls_md_hmac_update( &sha_ctx, buffer, 16 );
-            mbedtls_aes_crypt_ecb( &aes_ctx, MBEDTLS_AES_DECRYPT, buffer, buffer );
-
-            for( i = 0; i < 16; i++ )
-                buffer[i] = (unsigned char)( buffer[i] ^ IV[i] );
-
-            memcpy( IV, tmp, 16 );
-
-            n = ( lastn > 0 && offset == filesize - 16 )
-                ? lastn : 16;
-
-            if( fwrite( buffer, 1, n, fout ) != (size_t) n )
-            {
-                mbedtls_fprintf( stderr, "fwrite(%d bytes) failed\n", n );
-                goto exit;
-            }
-        }
-
-        /*
-         * Verify the message authentication code.
-         */
-        mbedtls_md_hmac_finish( &sha_ctx, digest );
-
-        if( fread( buffer, 1, 32, fin ) != 32 )
-        {
-            mbedtls_fprintf( stderr, "fread(%d bytes) failed\n", 32 );
-            goto exit;
-        }
-
-        /* Use constant-time buffer comparison */
-        diff = 0;
-        for( i = 0; i < 32; i++ )
-            diff |= digest[i] ^ buffer[i];
-
-        if( diff != 0 )
-        {
-            mbedtls_fprintf( stderr, "HMAC check failed: wrong key, "
-                             "or file corrupted.\n" );
-            goto exit;
-        }
-    }
-
-    ret = 0;
-
-exit:
-    if( fin )
-        fclose( fin );
-    if( fout )
-        fclose( fout );
-
-    memset( buffer, 0, sizeof( buffer ) );
-    memset( digest, 0, sizeof( digest ) );
-
-    mbedtls_aes_free( &aes_ctx );
-    mbedtls_md_free( &sha_ctx );
-
-    return( ret );
+    //cifra el texto
+    (void)mbedtls_aes_crypt_ecb( &aes_cr, MBEDTLS_AES_ENCRYPT, (const unsigned char *)input, (unsigned char *)result );    
+    mbedtls_base64_encode(result_b64, 300, &olen, (const unsigned char *)result, strlen(result));
+    printf("AESENC_%s",result_b64);
+    
+    //FIN
+    free(key);
+    free(result);
+    free(result_b64);
+    free(input);
+    free(finalKey);
+    free(buffer);
+    return 0;
 }
-#endif /* MBEDTLS_AES_C && MBEDTLS_SHA256_C && MBEDTLS_FS_IO */
+#endif  //MBEDTLS_AES_C && MBEDTLS_SHA256_C && MBEDTLS_FS_IO 

@@ -181,7 +181,9 @@ int main()
     mbedtls_printf( "%s", result );
 
     ret = 0;
-
+    free(tmpArr);
+    free(buf);
+    free(pkeyBuf);
 exit:
     mbedtls_ctr_drbg_free( &ctr_drbg );
     mbedtls_entropy_free( &entropy );

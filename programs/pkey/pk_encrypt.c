@@ -107,22 +107,13 @@ int main( int argc, char *argv[] )
     {
         printf( "\nfailed! mbedtls_pk_parse_public_key returned %d\n", ret );
         //goto exit;
+        free(pkeyBuf);
         return -1;
     }
-    
-    // printf("\ntext");
-    // iSize = 0;
-    // while(1) {
-    //     tmp =(char)getchar();
-    //     if(tmp=='\n'|| iSize>=100){
-    //         break;
-    //     } 
-    //     to_crypt[iSize]=tmp;
-    //     iSize++;
-    // }
     if( strlen( argv[1] ) > 255 )
     {
         mbedtls_printf( " Input data larger than 100 characters.\n\n" );
+        free(pkeyBuf);
         return -1;
     }
     memcpy( input, argv[1], strlen( argv[1] ) );
@@ -136,6 +127,7 @@ int main( int argc, char *argv[] )
                             mbedtls_ctr_drbg_random, &ctr_drbg ) ) != 0 )
     {
         mbedtls_printf( " failed\n  ! mbedtls_pk_encrypt returned -0x%04x\n", -ret );
+        free(pkeyBuf);
         goto exit;
     }
 
@@ -146,7 +138,7 @@ int main( int argc, char *argv[] )
     printf("RESULTPKENCRYPT:");
     for( i = 0; i < olen; i++ )
         printf( "%02X%s", buf[i], ( i + 1 ) % 16 == 0 ? "\r\n" : " " );
-
+    free(pkeyBuf);
 exit:
     mbedtls_ctr_drbg_free( &ctr_drbg );
     mbedtls_entropy_free( &entropy );
