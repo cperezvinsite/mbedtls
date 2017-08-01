@@ -52,108 +52,91 @@ int main( void )
 #include "mbedtls/ctr_drbg.h"
 #include "mbedtls/md.h"
 #include "mbedtls/pk.h"
+#include "mbedtls/base64.h"
 
 #include <stdio.h>
 #include <string.h>
 
 int main( int argc, char *argv[] )
 {
-    FILE *f;
     int ret = 1;
     mbedtls_pk_context pk;
     mbedtls_entropy_context entropy;
     mbedtls_ctr_drbg_context ctr_drbg;
     unsigned char hash[32];
     unsigned char buf[MBEDTLS_MPI_MAX_SIZE];
-    char filename[512];
+    char tmp;
+    int iSize = 0;
     const char *pers = "mbedtls_pk_sign";
+    char * pkeyBuf = malloc(2049);
+    char * result_b64 = malloc(300);
+    bzero(pkeyBuf,2049);
     size_t olen = 0;
+    size_t olenB64 = 0;
+    size_t olenSign = 0;
 
     mbedtls_entropy_init( &entropy );
     mbedtls_ctr_drbg_init( &ctr_drbg );
     mbedtls_pk_init( &pk );
 
-    if( argc != 3 )
+    if( argc != 2 )
     {
-        mbedtls_printf( "usage: mbedtls_pk_sign <key_file> <filename>\n" );
-
-#if defined(_WIN32)
-        mbedtls_printf( "\n" );
-#endif
-
+        mbedtls_printf( "usage: mbedtls_pk_sign <id>\n" );
         goto exit;
     }
 
-    mbedtls_printf( "\n  . Seeding the random number generator..." );
-    fflush( stdout );
-
-    if( ( ret = mbedtls_ctr_drbg_seed( &ctr_drbg, mbedtls_entropy_func, &entropy,
-                               (const unsigned char *) pers,
-                               strlen( pers ) ) ) != 0 )
+    if( ( ret = mbedtls_ctr_drbg_seed( &ctr_drbg, mbedtls_entropy_func, &entropy, (const unsigned char *) pers, strlen( pers ) ) ) != 0 )
     {
         mbedtls_printf( " failed\n  ! mbedtls_ctr_drbg_seed returned -0x%04x\n", -ret );
         goto exit;
     }
 
-    mbedtls_printf( "\n  . Reading private key from '%s'", argv[1] );
-    fflush( stdout );
-
-    if( ( ret = mbedtls_pk_parse_keyfile( &pk, argv[1], "" ) ) != 0 )
+    
+    //READ PRIVATE KEY FROM CONSOLE
+    while(1) {
+        tmp =(char)getchar();
+        if((tmp=='\n' && (iSize > 0 && pkeyBuf[iSize-1] == '\n')) || iSize>=2049){
+            break;
+        } 
+        pkeyBuf[iSize]=tmp;
+        iSize++;
+    }
+    olen = strlen(pkeyBuf)+1;
+    // PARSE PRIVATE KEY
+    if( ( ret = mbedtls_pk_parse_key( &pk, (const unsigned char *)pkeyBuf, olen, (const unsigned char *)"", 0 ) ) != 0 )
     {
-        ret = 1;
-        mbedtls_printf( " failed\n  ! Could not open '%s'\n", argv[1] );
+        mbedtls_printf( " failed\n  ! mbedtls_pk_parse_keyfile returned -0x%04x\n", -ret );
         goto exit;
     }
+    
+
 
     /*
      * Compute the SHA-256 hash of the input file,
      * then calculate the signature of the hash.
      */
-    mbedtls_printf( "\n  . Generating the SHA-256 signature" );
-    fflush( stdout );
-
-    if( ( ret = mbedtls_md_file(
-                    mbedtls_md_info_from_type( MBEDTLS_MD_SHA256 ),
-                    argv[2], hash ) ) != 0 )
+    
+    if( ( ret = mbedtls_md(mbedtls_md_info_from_type( MBEDTLS_MD_SHA256 ), (const unsigned char *)argv[1], strlen(argv[1]), hash ) ) != 0 )
     {
-        mbedtls_printf( " failed\n  ! Could not open or read %s\n\n", argv[2] );
+        mbedtls_printf( " failed\n  ! Could not open or read %s\n\n", argv[1] );
         goto exit;
     }
-
-    if( ( ret = mbedtls_pk_sign( &pk, MBEDTLS_MD_SHA256, hash, 0, buf, &olen,
-                         mbedtls_ctr_drbg_random, &ctr_drbg ) ) != 0 )
+    
+    if( ( ret = mbedtls_pk_sign( &pk, MBEDTLS_MD_SHA256, hash, 0, buf, &olenSign, mbedtls_ctr_drbg_random, &ctr_drbg ) ) != 0 )
     {
         mbedtls_printf( " failed\n  ! mbedtls_pk_sign returned -0x%04x\n", -ret );
         goto exit;
     }
 
-    /*
-     * Write the signature into <filename>.sig
-     */
-    mbedtls_snprintf( filename, sizeof(filename), "%s.sig", argv[2] );
-
-    if( ( f = fopen( filename, "wb+" ) ) == NULL )
-    {
-        ret = 1;
-        mbedtls_printf( " failed\n  ! Could not create %s\n\n", filename );
-        goto exit;
-    }
-
-    if( fwrite( buf, 1, olen, f ) != olen )
-    {
-        mbedtls_printf( "failed\n  ! fwrite failed\n\n" );
-        fclose( f );
-        goto exit;
-    }
-
-    fclose( f );
-
-    mbedtls_printf( "\n  . Done (created \"%s\")\n\n", filename );
-
+    mbedtls_base64_encode(result_b64, 300, &olenB64, (const char *)buf, olenSign);
+    printf("%s",result_b64);
+    
 exit:
     mbedtls_pk_free( &pk );
     mbedtls_ctr_drbg_free( &ctr_drbg );
     mbedtls_entropy_free( &entropy );
+    free(pkeyBuf);
+    free(result_b64);
 
 #if defined(MBEDTLS_ERROR_C)
     if( ret != 0 )

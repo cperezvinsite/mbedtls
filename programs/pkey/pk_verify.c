@@ -48,86 +48,78 @@ int main( void )
 #include "mbedtls/error.h"
 #include "mbedtls/md.h"
 #include "mbedtls/pk.h"
+#include "mbedtls/base64.h"
 
 #include <stdio.h>
 #include <string.h>
 
 int main( int argc, char *argv[] )
 {
-    FILE *f;
     int ret = 1;
-    size_t i;
+    size_t olenBase = 0;
+    size_t olen = 0;
     mbedtls_pk_context pk;
     unsigned char hash[32];
     unsigned char buf[MBEDTLS_MPI_MAX_SIZE];
-    char filename[512];
-
+    char * pkeyBuf = malloc(550);
+    char tmp;
+    int iSize = 0;
     mbedtls_pk_init( &pk );
 
     if( argc != 3 )
     {
-        mbedtls_printf( "usage: mbedtls_pk_verify <key_file> <filename>\n" );
-
-#if defined(_WIN32)
-        mbedtls_printf( "\n" );
-#endif
-
+        mbedtls_printf( "usage: mbedtls_pk_verify <original> <base64>\n" );
         goto exit;
     }
-
-    mbedtls_printf( "\n  . Reading public key from '%s'", argv[1] );
-    fflush( stdout );
-
-    if( ( ret = mbedtls_pk_parse_public_keyfile( &pk, argv[1] ) ) != 0 )
+    
+    //READ PUBLIC KEY FROM INPUT
+    bzero(pkeyBuf,550);
+    while(1) {
+        tmp =(char)getchar();
+        if((tmp=='\n' && (iSize > 0 && pkeyBuf[iSize-1] == '\n')) || iSize>=550){
+            break;
+        } 
+        pkeyBuf[iSize]=tmp;
+        iSize++;
+    }
+    olen = strlen(pkeyBuf)+1;
+    if( ( ret = mbedtls_pk_parse_public_key( &pk, (const unsigned char *)pkeyBuf, olen ) ) != 0 )
     {
-        mbedtls_printf( " failed\n  ! mbedtls_pk_parse_public_keyfile returned -0x%04x\n", -ret );
+        printf( "\nfailed! mbedtls_pk_parse_public_key returned %d\n", ret );
         goto exit;
     }
 
-    /*
-     * Extract the signature from the file
-     */
-    ret = 1;
-    mbedtls_snprintf( filename, sizeof(filename), "%s.sig", argv[2] );
-
-    if( ( f = fopen( filename, "rb" ) ) == NULL )
-    {
-        mbedtls_printf( "\n  ! Could not open %s\n\n", filename );
-        goto exit;
+    // CONVERT BASE 64 TO SIGN
+    if( mbedtls_base64_decode( (unsigned char *)buf, MBEDTLS_MPI_MAX_SIZE, (size_t *)&olenBase, (const unsigned char *)argv[2], strlen(argv[2]) )){
+       printf("ota_handler_validate_hola_challengeme error at decode\n");
+       ret = -1;
+       goto exit;
     }
-
-
-    i = fread( buf, 1, sizeof(buf), f );
-
-    fclose( f );
 
     /*
      * Compute the SHA-256 hash of the input file and
      * verify the signature
      */
-    mbedtls_printf( "\n  . Verifying the SHA-256 signature" );
-    fflush( stdout );
 
-    if( ( ret = mbedtls_md_file(
-                    mbedtls_md_info_from_type( MBEDTLS_MD_SHA256 ),
-                    argv[2], hash ) ) != 0 )
+    if( ( ret = mbedtls_md(mbedtls_md_info_from_type( MBEDTLS_MD_SHA256 ), (const unsigned char *)argv[1], strlen(argv[1]), hash ) ) != 0 )
     {
-        mbedtls_printf( " failed\n  ! Could not open or read %s\n\n", argv[2] );
+        mbedtls_printf( " failed\n  ! Could not open or read %s\n\n", argv[1] );
         goto exit;
     }
+    
 
-    if( ( ret = mbedtls_pk_verify( &pk, MBEDTLS_MD_SHA256, hash, 0,
-                           buf, i ) ) != 0 )
+    if( ( ret = mbedtls_pk_verify( &pk, MBEDTLS_MD_SHA256, hash, 0, buf, olenBase ) ) != 0 )
     {
         mbedtls_printf( " failed\n  ! mbedtls_pk_verify returned -0x%04x\n", -ret );
         goto exit;
     }
 
-    mbedtls_printf( "\n  . OK (the signature is valid)\n\n" );
+    mbedtls_printf( "OK" );
 
     ret = 0;
 
 exit:
+    free(pkeyBuf);
     mbedtls_pk_free( &pk );
 
 #if defined(MBEDTLS_ERROR_C)
