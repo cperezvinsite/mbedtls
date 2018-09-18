@@ -77,7 +77,7 @@ int main( int argc, char *argv[] )
     while(1) {
         tmp =(char)getchar();
         if((tmp=='\n' && (iSize > 0 && pkeyBuf[iSize-1] == '\n')) || iSize>=550){
-            break;
+       	     break;
         } 
         pkeyBuf[iSize]=tmp;
         iSize++;

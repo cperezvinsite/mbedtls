@@ -67,9 +67,9 @@ int main( int argc, char *argv[] )
       mbedtls_printf( "usage:  <key> <enc text>\n" );
       return -1;
   }
-  if( strlen( argv[1] ) > 64 )
+  if( strlen( argv[1] ) != 64 )
   {
-      mbedtls_printf( " Input data larger than 64 characters.\n\n" );
+      mbedtls_printf( " the key should be 64 characters\n\n" );
       return -1;
   }
   if( strlen( argv[2] ) > 100 )
@@ -80,9 +80,8 @@ int main( int argc, char *argv[] )
   
 
   char tmpArr[5];
-  char * key = malloc(64);
-  char * buffer = malloc(16);
-  char * input = malloc(100);
+  char * key = calloc(64,1);
+  char * input = calloc(100,1);
   char * result = malloc(300);
   char * finalKey = malloc(32);
   unsigned char * result_b64 = malloc(300);
@@ -90,8 +89,6 @@ int main( int argc, char *argv[] )
   int counter = 0;
   size_t olen = 0;
 
-
-  bzero(input,100);
   tmpArr[0] = '0';
   tmpArr[1] = 'x';
 
@@ -99,9 +96,7 @@ int main( int argc, char *argv[] )
   memcpy( input, argv[2], strlen( argv[2] ) );
   
   mbedtls_aes_context aes_cr;
-  mbedtls_aes_context aes_dec;
   mbedtls_aes_init( &aes_cr );
-  mbedtls_aes_init( &aes_dec );
 
   //crear nueva llave usando un hex en string y separando cada byte
   for(i = 2; i<=64; i += 2){
@@ -119,13 +114,13 @@ int main( int argc, char *argv[] )
       free(result_b64);
       free(input);
       free(finalKey);
-      free(buffer);
       return -1;
   }
 
   //cifra el texto
-  (void)mbedtls_aes_crypt_ecb( &aes_cr, MBEDTLS_AES_ENCRYPT, (const unsigned char *)input, (unsigned char *)result );    
-  mbedtls_base64_encode(result_b64, 300, &olen, (const unsigned char *)result, strlen(result));
+  (void)mbedtls_aes_crypt_ecb( &aes_cr, MBEDTLS_AES_ENCRYPT, (const unsigned char *)input, (unsigned char *)result ); 
+  // the lats argument should be 16 because ecb cypher only process 16 bytes blocks
+  mbedtls_base64_encode(result_b64, 300, &olen, (const unsigned char *)result, 16);
   printf("AESENC_%s",result_b64);
   
   //FIN
@@ -134,6 +129,5 @@ int main( int argc, char *argv[] )
   free(result_b64);
   free(input);
   free(finalKey);
-  free(buffer);
   return 0;
 }
