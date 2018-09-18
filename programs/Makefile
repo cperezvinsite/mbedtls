@@ -47,7 +47,7 @@ endif
 
 APPS =	aes/aescrypt2$(EXEXT)		aes/crypt_and_hash$(EXEXT)	\
 	hash/hello$(EXEXT)		hash/generic_sum$(EXEXT)	\
-					pkey/dh_client$(EXEXT)		\
+	aes/aescrypt2-1$(EXEXT)		pkey/dh_client$(EXEXT)		\
 	pkey/dh_genprime$(EXEXT)	pkey/dh_server$(EXEXT)		\
 	pkey/ecdh_curve25519$(EXEXT)					\
 	pkey/ecdsa$(EXEXT)		pkey/gen_key$(EXEXT)		\
@@ -88,6 +88,10 @@ $(DEP):
 aes/aescrypt2$(EXEXT): aes/aescrypt2.c $(DEP)
 	echo "  CC    aes/aescrypt2.c"
 	$(CC) $(LOCAL_CFLAGS) $(CFLAGS) aes/aescrypt2.c    $(LOCAL_LDFLAGS) $(LDFLAGS) -o $@
+
+aes/aescrypt2-1$(EXEXT): aes/aescrypt2-1.c $(DEP)
+	echo "  CC    aes/aescrypt2-1.c"
+	$(CC) $(LOCAL_CFLAGS) $(CFLAGS) aes/aescrypt2-1.c    $(LOCAL_LDFLAGS) $(LDFLAGS) -o $@
 
 aes/crypt_and_hash$(EXEXT): aes/crypt_and_hash.c $(DEP)
 	echo "  CC    aes/crypt_and_hash.c"
